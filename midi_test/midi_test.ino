@@ -38,10 +38,10 @@ void loop()
   }
 
   if (digitalRead(HIGH_DEPTH_PIN) == LOW) {
-    MIDI.sendControlChange(92, 240, 1);
+    MIDI.sendControlChange(92, 127, 1);
   }
   if (digitalRead(LOW_DEPTH_PIN) == LOW) {
-    MIDI.sendControlChange(92, 50, 1);
+    MIDI.sendControlChange(92, 0, 1);
   }
 
   delay(1000);
