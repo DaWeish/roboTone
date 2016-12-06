@@ -3,6 +3,8 @@
  * waveform_generator.ino
  */
 
+#include <MIDI.h>
+
 #include "pwm_waves.h"
 
 /*
@@ -34,50 +36,138 @@
 #define MIN_SPEED 255
 #define MAX_SPEED 40
 
-int speedValue = MIN_SPEED;
-int depthValue = 150;
-uint8_t waveType = SINE_WAVE;
+#define DEPTH_SENSITIVITY 2
+#define SPEED_SENSITIVITY 2
 
+#define MIDI_CHAN 1
+
+uint16_t speedValue = MIN_SPEED;
+uint16_t depthValue = MAX_DEPTH;
+
+uint8_t waveType = SINE_WAVE;
+uint8_t prevWaveType = SINE_WAVE;
+
+uint8_t depthUpperDelta;
+uint8_t depthLowerDelta;
+
+uint8_t speedUpperDelta;
+uint8_t speedLowerDelta;
+
+
+// These flags specify whether the MIDI has updated a value
+bool lockWaveSpeed = false;
+bool lockWaveDepth = false;
+
+// Set MIDI object to use Serial port
+MIDI_CREATE_DEFAULT_INSTANCE();
+
+// MIDI CC 12: Effect Controller 1 (Waveform select)
+// MIDI CC 13: Effect Controller 2 (Speed Knob)
+// MIDI CC 92: Tremelo Effect Depth
+void handleControlChange(uint8_t channel, uint8_t number, uint8_t value)
+{
+  if (channel == MIDI_CHAN)
+  {
+    switch (number)
+    {
+      case 12: { // Effect Controller 1 -> Signal Select
+        switch (value) {
+          case SINE_WAVE: {
+            waveType = SINE_WAVE;
+          } break;
+          case SQUARE_WAVE: {
+            waveType = SQUARE_WAVE;
+          } break;
+          case RAMP_WAVE: {
+            waveType = RAMP_WAVE;
+          } break;
+        };
+      } break;
+      case 13: { // Effect Controller 2
+        // Speed Knob
+      } break;
+      case 92: { // Termelo Effect Depth
+        // Set the new depth value based on MIDI data
+        depthValue = map(value, 0, 127, MIN_DEPTH, MAX_DEPTH);
+
+        // Make sure we don't update the depth to the knob value unless it changes
+        lockWaveDepth = true;
+
+        // Set the depth window that the value will have to overcome to disable
+        // the MIDI lock
+        depthUpperDelta = depthValue + DEPTH_SENSITIVITY;
+        // Account for overflow on the depth range
+        if (depthUpperDelta < depthValue) depthUpperDelta = MAX_DEPTH;
+        depthLowerDelta = depthValue - DEPTH_SENSITIVITY;
+        if (depthLowerDelta > depthValue) depthLowerDelta = MIN_DEPTH;
+      } break;
+    };
+  }
+}
 
 void setup()
 {
-  analogReference(DEFAULT);
+  // Set callback for handling Control Change messages
+  MIDI.setHandleControlChange(handleControlChange);
+  MIDI.begin(MIDI_CHAN); // Listen to MIDI messages on MIDI_CHAN
+
+  // Set the selector pins to use the internal pull up resistors
   pinMode(SELECTOR_1, INPUT_PULLUP);
   pinMode(SELECTOR_2, INPUT_PULLUP);
   pinMode(SELECTOR_3, INPUT_PULLUP);
 
+  // Update state values before starting waveforms
   updateWaveInputs();
   updateWaveType();
   updateWaveState(waveType, MAX_DEPTH, MAX_SPEED);
+
+  // Begin generating modulation waveform
   beginPWMWave();
-
-  Serial.begin(115200);
 }
-
 
 void loop()
 {
   updateWaveInputs();
   updateWaveType();
   updateWaveState(waveType, depthValue, speedValue);
+  MIDI.read(MIDI_CHAN);
 
-  delay(100);
+  delay(10);
 }
 
-void updateWaveType() {
-  if (digitalRead(SELECTOR_1) == LOW) waveType = SINE_WAVE;
-  if (digitalRead(SELECTOR_2) == LOW) waveType = SQUARE_WAVE;
-  if (digitalRead(SELECTOR_3) == LOW) waveType = RAMP_WAVE;
+void updateWaveType()
+{
+  uint8_t selectedWave = prevWaveType;
+  if (digitalRead(SELECTOR_1) == LOW) selectedWave = SINE_WAVE;
+  if (digitalRead(SELECTOR_2) == LOW) selectedWave = SQUARE_WAVE;
+  if (digitalRead(SELECTOR_3) == LOW) selectedWave = RAMP_WAVE;
+
+  if (selectedWave != prevWaveType)
+  {
+    waveType = selectedWave;
+    prevWaveType = selectedWave;
+  }
 }
 
+// Update the depth and speed values
+// If the midi lock is true, the depth/speed values must change by an amount
+// greater than the previous value +/- some sensitivity
 void updateWaveInputs() {
-  speedValue = analogRead(SPEED_KNOB);
-  depthValue = analogRead(DEPTH_KNOB);
+  uint16_t selectedSpeed = analogRead(SPEED_KNOB);
+  uint16_t selectedDepth = analogRead(DEPTH_KNOB);
 
-  //Serial.print(speedValue);
-  //Serial.print("   ");
-  //Serial.println(depthValue);
+  selectedDepth = map(selectedDepth, 0, 1023, MIN_DEPTH, MAX_DEPTH);
+  selectedSpeed = map(selectedSpeed, 0, 1023, MIN_SPEED, MAX_SPEED);
 
-  depthValue = map(depthValue, 0, 1023, MIN_DEPTH, MAX_DEPTH);
-  speedValue = map(speedValue, 0, 1023, MIN_SPEED, MAX_SPEED);
+  if (lockWaveDepth)
+  {
+    if ((selectedDepth > depthUpperDelta) || (selectedDepth < depthLowerDelta))
+    {
+      depthValue = selectedDepth;
+    }
+  }
+  else
+  {
+    depthValue = selectedDepth;
+  }
 }
