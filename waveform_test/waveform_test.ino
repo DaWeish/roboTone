@@ -16,8 +16,10 @@
  * ADC0 22
  */
 
-#define SPEED_KNOB 21
-#define DEPTH_KNOB 28
+//#define SPEED_KNOB 21
+//#define DEPTH_KNOB 28
+#define DEPTH_KNOB A6
+#define SPEED_KNOB A7
 
 // Actual Pins
 // 11 -> D11
@@ -30,16 +32,17 @@
 #define SELECTOR_2 8
 #define SELECTOR_3 12
 
-#define MIN_DEPTH 40
+#define MIN_DEPTH 60
 #define MAX_DEPTH 250
 
-#define MIN_SPEED 255
-#define MAX_SPEED 40
+#define MIN_SPEED 1
+#define MAX_SPEED 8
 
 #define DEPTH_SENSITIVITY 2
 #define SPEED_SENSITIVITY 2
 
 #define MIDI_CHAN 1
+#define LED 13
 
 uint16_t speedValue = MIN_SPEED;
 uint16_t depthValue = MAX_DEPTH;
@@ -52,6 +55,8 @@ uint8_t depthLowerDelta;
 
 uint8_t speedUpperDelta;
 uint8_t speedLowerDelta;
+
+bool ledState = false;
 
 
 // These flags specify whether the MIDI has updated a value
@@ -73,12 +78,18 @@ void handleControlChange(uint8_t channel, uint8_t number, uint8_t value)
       case 12: { // Effect Controller 1 -> Signal Select
         switch (value) {
           case SINE_WAVE: {
+            digitalWrite(LED, ledState);
+            ledState = ~ledState;
             waveType = SINE_WAVE;
           } break;
           case SQUARE_WAVE: {
+            digitalWrite(LED, ledState);
+            ledState = ~ledState;
             waveType = SQUARE_WAVE;
           } break;
           case RAMP_WAVE: {
+            digitalWrite(LED, ledState);
+            ledState = ~ledState;
             waveType = RAMP_WAVE;
           } break;
         };
@@ -87,6 +98,8 @@ void handleControlChange(uint8_t channel, uint8_t number, uint8_t value)
         // Speed Knob
       } break;
       case 92: { // Termelo Effect Depth
+        digitalWrite(LED, ledState);
+        ledState = ~ledState;
         // Set the new depth value based on MIDI data
         depthValue = map(value, 0, 127, MIN_DEPTH, MAX_DEPTH);
 
@@ -107,22 +120,24 @@ void handleControlChange(uint8_t channel, uint8_t number, uint8_t value)
 
 void setup()
 {
-  // Set callback for handling Control Change messages
-  MIDI.setHandleControlChange(handleControlChange);
-  MIDI.begin(MIDI_CHAN); // Listen to MIDI messages on MIDI_CHAN
-
   // Set the selector pins to use the internal pull up resistors
   pinMode(SELECTOR_1, INPUT_PULLUP);
   pinMode(SELECTOR_2, INPUT_PULLUP);
   pinMode(SELECTOR_3, INPUT_PULLUP);
 
+  pinMode(LED, OUTPUT);
+
   // Update state values before starting waveforms
   updateWaveInputs();
   updateWaveType();
-  updateWaveState(waveType, MAX_DEPTH, MAX_SPEED);
+  updateWaveState(waveType, depthValue, speedValue);
 
   // Begin generating modulation waveform
   beginPWMWave();
+
+  // Set callback for handling Control Change messages
+  MIDI.setHandleControlChange(handleControlChange);
+  MIDI.begin(MIDI_CHAN); // Listen to MIDI messages on MIDI_CHAN
 }
 
 void loop()
@@ -170,4 +185,6 @@ void updateWaveInputs() {
   {
     depthValue = selectedDepth;
   }
+
+  speedValue = selectedSpeed;
 }

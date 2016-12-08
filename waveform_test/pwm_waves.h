@@ -124,17 +124,21 @@ static void beginWaveAmplitudeTimer(uint8_t clock, bool inverting)
 
 void beginWaveSpeedTimer(uint8_t clock)
 {
-  // May need to do arithmetic on this value to get it right
-  WAVESPEED = waveState.speed;
+  // This doesn't work for some reason
+  //WAVESPEED = waveState.speed;
+  WAVESPEED = 255;
 
   // Set up interrupt when OCRA2 == TCNT2
-  TIMSK2 = (1 << OCIE2A);
+  TIMSK2 |= (1 << OCIE2A);
 
-  // Set the interrupt to be enabled
-  interrupts();
+  // Set the timer to CTC mode
+  TCCR2A |= (1 << WGM21);
 
   // Set the clock prescaler equal to clock
   TCCR2B |= clock;
+
+  // Set the interrupt to be enabled
+  interrupts();
 }
 
 /*
@@ -148,7 +152,8 @@ ISR(TIMER2_COMPA_vect)
   //uint8_t clock = TCCR2B & 0x07;
   //TCCR2B &= ~0x07; // stop the timer so that it doesn't cause any interrupts
   // Increment to next wave data point
-  waveState.index++;
+  // This is hacky and messes up the waveform
+  waveState.index += waveState.speed;
 
   // Update the duty cycle for the wave
   int8_t waveData = waveforms[waveState.type][waveState.index];
@@ -156,9 +161,8 @@ ISR(TIMER2_COMPA_vect)
   uint8_t waveDepth = waveState.depth;
   waveData = ((waveData + WAVEOFFSET) * (2 * waveDepth) / 255) - waveDepth;
 
-  //WAVESPEED = waveState.speed;
+  WAVESPEED = waveState.speed;
   WAVEDUTY = waveData + WAVEOFFSET; // offset the wave to make all positive values
 
-  TCNT2 = 0; // Reset the counter to start at 0
   //TCCR2B |= clock; // restart the Timer
 }
